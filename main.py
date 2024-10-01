@@ -45,10 +45,11 @@ async def predict(request: TextRequest):
     doc_custom = nlp_custom(cleaned_text)
     entities_to_store = []
     first_author = None
+    additional_authors = []  # Temporary list to store additional authors
 
     # Process custom NER entities (Title, Edition, Volume, ISBN, First Author)
     for ent in doc_custom.ents:
-        # Capture all entities (Title, Edition, Volume, ISBN, Authors)
+        # Capture all entities (Title, Edition, Volume, ISBN)
         if ent.label_ == "ISBN":
             entities_to_store.append({
                 "text": ent.text,
@@ -65,7 +66,15 @@ async def predict(request: TextRequest):
                 "end": ent.end_char
             })
             first_author = ent.text  # Save the first author name to avoid duplicates
-        elif ent.label_ not in ["Authors"]:
+        elif ent.label_ == "Authors":
+            # Store additional authors temporarily
+            additional_authors.append({
+                "text": ent.text,
+                "label": ent.label_,
+                "start": ent.start_char,
+                "end": ent.end_char
+            })
+        else:
             # Capture other entities like Title, Edition, Volume, etc.
             entities_to_store.append({
                 "text": ent.text,
@@ -79,12 +88,20 @@ async def predict(request: TextRequest):
     for ent in doc_sm.ents:
         # Detect additional authors, but avoid the first author
         if ent.label_ == "PERSON" and ent.text != first_author and not is_near_restricted_words(ent, cleaned_text):
-            entities_to_store.append({
+            additional_authors.append({
                 "text": ent.text,
                 "label": "Authors",
                 "start": ent.start_char,
                 "end": ent.end_char
             })
+
+    # Now append all the additional authors right after the first author in the final output
+    # Find the index of the first author in the entities_to_store
+    first_author_index = next((i for i, entity in enumerate(entities_to_store) if entity["label"] == "Authors"), None)
+
+    # If the first author is found, insert the additional authors right after
+    if first_author_index is not None:
+        entities_to_store[first_author_index + 1:first_author_index + 1] = additional_authors
 
     # Return the entities in the dictionary format
     return {"entities": entities_to_store}
